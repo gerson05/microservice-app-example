@@ -1,0 +1,33 @@
+# Microservices Infrastructure - Terraform Variables
+# Copy this file to terraform.tfvars and update the values
+
+# Basic Configuration
+location    = "East US"
+environment = "dev"
+
+# Kubernetes Configuration
+kubernetes_version = "1.28"
+node_count        = 2
+node_size         = "Standard_D2s_v3"
+
+# Database Configuration
+enable_database   = false
+db_admin_username = "microservices_admin"
+db_admin_password = "Microservices123!"
+
+# Security Configuration
+jwt_secret = "your-super-secret-jwt-key-change-this-in-production"
+
+# Monitoring Configuration
+monitoring_enabled = true
+backup_enabled     = false
+security_center_enabled = true
+
+# Tags
+tags = {
+  Project     = "microservices"
+  ManagedBy   = "terraform"
+  Environment = "dev"
+  Owner       = "devops-team"
+  CostCenter  = "engineering"
+}
