@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
@@ -12,6 +13,7 @@ import (
 	"github.com/labstack/echo/middleware"
 	gommonlog "github.com/labstack/gommon/log"
 	"github.com/sony/gobreaker"
+	"errors"
 )
 
 var (
@@ -101,11 +103,15 @@ func getLoginHandler(userService UserService) echo.HandlerFunc {
 		ctx := c.Request().Context()
 		user, err := userService.Login(ctx, requestData.Username, requestData.Password)
 		if err != nil {
+			// Manejo explícito del breaker abierto
+			if errors.Is(err, gobreaker.ErrOpenState) {
+				log.Printf("Circuit breaker OPEN: servicio de usuarios no disponible")
+				return echo.NewHTTPError(http.StatusServiceUnavailable, "Servicio de usuarios no disponible temporalmente")
+			}
 			if err != ErrWrongCredentials {
 				log.Printf("could not authorize user '%s': %s", requestData.Username, err.Error())
 				return ErrHttpGenericMessage
 			}
-
 			return ErrWrongCredentials
 		}
 		token := jwt.New(jwt.SigningMethodHS256)
