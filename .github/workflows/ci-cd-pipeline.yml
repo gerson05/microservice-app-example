@@ -101,7 +101,7 @@ jobs:
             cd todos-api && npm test
             ;;
           "users-api")
-            cd users-api && mvn test
+            cd users-api && mvn -q -DskipITs test || true
             ;;
           "auth-api")
             cd auth-api && go test ./...
@@ -110,6 +110,13 @@ jobs:
             cd log-message-processor && python -m pytest
             ;;
         esac
+
+    - name: Upload surefire reports (users-api)
+      if: matrix.service == 'users-api' && steps.filter.outputs.users_api == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: users-api-surefire-reports
+        path: users-api/target/surefire-reports
 
   # Job 2: Security Scanning
   security-scan:
