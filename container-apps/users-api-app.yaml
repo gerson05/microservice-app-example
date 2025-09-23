@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: ContainerApp
+metadata:
+  name: users-api-app
+  namespace: microservices
+spec:
+  environmentId: /subscriptions/{subscription-id}/resourceGroups/microservices-rg/providers/Microsoft.App/managedEnvironments/microservices-env
+  configuration:
+    ingress:
+      external: false
+      targetPort: 8083
+      transport: http
+    secrets:
+      - name: jwt-secret
+        value: "myfancysecret"
+      - name: redis-connection-string
+        value: "redis://:password@microservices-redis.redis.cache.windows.net:6380"
+    registries:
+      - server: microservicesacr.azurecr.io
+        username: microservicesacr
+        passwordSecretRef: acr-password
+  template:
+    containers:
+      - name: users-api
+        image: microservicesacr.azurecr.io/users-api:latest
+        resources:
+          cpu: 0.5
+          memory: 1Gi
+        env:
+          - name: SERVER_PORT
+            value: "8083"
+          - name: JWT_SECRET
+            secretRef: jwt-secret
+          - name: SPRING_ZIPKIN_BASEURL
+            value: "https://zipkin-app.internal/"
+          - name: SPRING_PROFILES_ACTIVE
+            value: "production"
+          - name: SPRING_REDIS_HOST
+            value: "microservices-redis.redis.cache.windows.net"
+          - name: SPRING_REDIS_PORT
+            value: "6380"
+    scale:
+      minReplicas: 1
+      maxReplicas: 3
+      rules:
+        - name: http-rule
+          http:
+            metadata:
+              concurrentRequests: "10"

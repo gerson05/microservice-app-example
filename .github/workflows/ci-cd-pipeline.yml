@@ -9,6 +9,9 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  ACR_REGISTRY: microservicesacr.azurecr.io
+  RESOURCE_GROUP: microservices-rg
+  CONTAINER_APP_ENV: microservices-env
 
 jobs:
   # Job 1: Build and Test
@@ -49,11 +52,18 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Log in to Azure Container Registry
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ env.ACR_REGISTRY }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+
     - name: Extract metadata
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.service }}
+        images: ${{ env.ACR_REGISTRY }}/${{ matrix.service }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
@@ -167,11 +177,125 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Deploy to Production
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Deploy to Azure Container Apps
       run: |
-        echo "Deploying to production environment"
-        # Add production deployment commands here
-        docker-compose -f docker-compose.yml up -d
+        echo "Deploying to Azure Container Apps..."
+        
+        # Get ACR credentials
+        ACR_USERNAME=$(az acr credential show --name microservicesacr --resource-group ${{ env.RESOURCE_GROUP }} --query username --output tsv)
+        ACR_PASSWORD=$(az acr credential show --name microservicesacr --resource-group ${{ env.RESOURCE_GROUP }} --query passwords[0].value --output tsv)
+        
+        # Deploy each container app
+        echo "Deploying frontend..."
+        az containerapp create \
+          --name frontend-app \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --environment ${{ env.CONTAINER_APP_ENV }} \
+          --image ${{ env.ACR_REGISTRY }}/frontend:latest \
+          --target-port 8080 \
+          --ingress external \
+          --cpu 0.5 \
+          --memory 1Gi \
+          --min-replicas 1 \
+          --max-replicas 3 \
+          --registry-server ${{ env.ACR_REGISTRY }} \
+          --registry-username $ACR_USERNAME \
+          --registry-password $ACR_PASSWORD \
+          --env-vars NODE_ENV=production AUTH_API_ADDRESS="https://auth-api-app.internal" TODOS_API_ADDRESS="https://todos-api-app.internal" ZIPKIN_URL="https://zipkin-app.internal/api/v2/spans" || \
+        az containerapp update \
+          --name frontend-app \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --image ${{ env.ACR_REGISTRY }}/frontend:latest
+        
+        echo "Deploying auth-api..."
+        az containerapp create \
+          --name auth-api-app \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --environment ${{ env.CONTAINER_APP_ENV }} \
+          --image ${{ env.ACR_REGISTRY }}/auth-api:latest \
+          --target-port 8081 \
+          --ingress internal \
+          --cpu 0.25 \
+          --memory 512Mi \
+          --min-replicas 1 \
+          --max-replicas 3 \
+          --registry-server ${{ env.ACR_REGISTRY }} \
+          --registry-username $ACR_USERNAME \
+          --registry-password $ACR_PASSWORD \
+          --env-vars AUTH_API_PORT=8081 JWT_SECRET="myfancysecret" USERS_API_ADDRESS="https://users-api-app.internal" ZIPKIN_URL="https://zipkin-app.internal/api/v2/spans" || \
+        az containerapp update \
+          --name auth-api-app \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --image ${{ env.ACR_REGISTRY }}/auth-api:latest
+        
+        echo "Deploying todos-api..."
+        az containerapp create \
+          --name todos-api-app \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --environment ${{ env.CONTAINER_APP_ENV }} \
+          --image ${{ env.ACR_REGISTRY }}/todos-api:latest \
+          --target-port 8082 \
+          --ingress internal \
+          --cpu 0.25 \
+          --memory 512Mi \
+          --min-replicas 1 \
+          --max-replicas 5 \
+          --registry-server ${{ env.ACR_REGISTRY }} \
+          --registry-username $ACR_USERNAME \
+          --registry-password $ACR_PASSWORD \
+          --env-vars TODO_API_PORT=8082 JWT_SECRET="myfancysecret" REDIS_HOST="microservices-redis.redis.cache.windows.net" REDIS_PORT=6380 REDIS_CHANNEL=log_channel ZIPKIN_URL="https://zipkin-app.internal/api/v2/spans" || \
+        az containerapp update \
+          --name todos-api-app \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --image ${{ env.ACR_REGISTRY }}/todos-api:latest
+        
+        echo "Deploying users-api..."
+        az containerapp create \
+          --name users-api-app \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --environment ${{ env.CONTAINER_APP_ENV }} \
+          --image ${{ env.ACR_REGISTRY }}/users-api:latest \
+          --target-port 8083 \
+          --ingress internal \
+          --cpu 0.5 \
+          --memory 1Gi \
+          --min-replicas 1 \
+          --max-replicas 3 \
+          --registry-server ${{ env.ACR_REGISTRY }} \
+          --registry-username $ACR_USERNAME \
+          --registry-password $ACR_PASSWORD \
+          --env-vars SERVER_PORT=8083 JWT_SECRET="myfancysecret" SPRING_ZIPKIN_BASEURL="https://zipkin-app.internal/" SPRING_PROFILES_ACTIVE=production SPRING_REDIS_HOST="microservices-redis.redis.cache.windows.net" SPRING_REDIS_PORT=6380 || \
+        az containerapp update \
+          --name users-api-app \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --image ${{ env.ACR_REGISTRY }}/users-api:latest
+        
+        echo "Deploying log-processor..."
+        az containerapp create \
+          --name log-processor-app \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --environment ${{ env.CONTAINER_APP_ENV }} \
+          --image ${{ env.ACR_REGISTRY }}/log-message-processor:latest \
+          --ingress internal \
+          --cpu 0.1 \
+          --memory 256Mi \
+          --min-replicas 1 \
+          --max-replicas 2 \
+          --registry-server ${{ env.ACR_REGISTRY }} \
+          --registry-username $ACR_USERNAME \
+          --registry-password $ACR_PASSWORD \
+          --env-vars REDIS_HOST="microservices-redis.redis.cache.windows.net" REDIS_PORT=6380 REDIS_CHANNEL=log_channel ZIPKIN_URL="https://zipkin-app.internal/api/v2/spans" || \
+        az containerapp update \
+          --name log-processor-app \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --image ${{ env.ACR_REGISTRY }}/log-message-processor:latest
+        
+        echo "✅ Deployment completed successfully!"
 
   # Job 5: Integration Tests
   integration-tests:

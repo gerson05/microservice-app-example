@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: ContainerApp
+metadata:
+  name: auth-api-app
+  namespace: microservices
+spec:
+  environmentId: /subscriptions/{subscription-id}/resourceGroups/microservices-rg/providers/Microsoft.App/managedEnvironments/microservices-env
+  configuration:
+    ingress:
+      external: false
+      targetPort: 8081
+      transport: http
+    secrets:
+      - name: jwt-secret
+        value: "myfancysecret"
+    registries:
+      - server: microservicesacr.azurecr.io
+        username: microservicesacr
+        passwordSecretRef: acr-password
+  template:
+    containers:
+      - name: auth-api
+        image: microservicesacr.azurecr.io/auth-api:latest
+        resources:
+          cpu: 0.25
+          memory: 512Mi
+        env:
+          - name: AUTH_API_PORT
+            value: "8081"
+          - name: JWT_SECRET
+            secretRef: jwt-secret
+          - name: USERS_API_ADDRESS
+            value: "https://users-api-app.internal"
+          - name: ZIPKIN_URL
+            value: "https://zipkin-app.internal/api/v2/spans"
+    scale:
+      minReplicas: 1
+      maxReplicas: 3
+      rules:
+        - name: http-rule
+          http:
+            metadata:
+              concurrentRequests: "10"
