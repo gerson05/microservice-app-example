@@ -2,9 +2,9 @@ name: Microservices CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, feat/pipeLines ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, develop, feat/pipeLines ]
 
 env:
   REGISTRY: ghcr.io
