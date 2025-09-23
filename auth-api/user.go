@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	jwt "github.com/dgrijalva/jwt-go"
+	"github.com/sony/gobreaker"
 )
 
 var allowedUserHashes = map[string]interface{}{
@@ -31,8 +32,10 @@ type UserService struct {
 	Client            HTTPDoer
 	UserAPIAddress    string
 	AllowedUserHashes map[string]interface{}
+	cb                *gobreaker.CircuitBreaker
 }
 
+// Login con Circuit Breaker
 func (h *UserService) Login(ctx context.Context, username, password string) (User, error) {
 	user, err := h.getUser(ctx, username)
 	if err != nil {
@@ -40,46 +43,64 @@ func (h *UserService) Login(ctx context.Context, username, password string) (Use
 	}
 
 	userKey := fmt.Sprintf("%s_%s", username, password)
-
 	if _, ok := h.AllowedUserHashes[userKey]; !ok {
-		return user, ErrWrongCredentials // this is BAD, business logic layer must not return HTTP-specific errors
+		return user, ErrWrongCredentials
 	}
 
 	return user, nil
 }
 
+// getUser con Circuit Breaker
 func (h *UserService) getUser(ctx context.Context, username string) (User, error) {
 	var user User
 
+	// Construir la request
 	token, err := h.getUserAPIToken(username)
 	if err != nil {
 		return user, err
 	}
+
 	url := fmt.Sprintf("%s/users/%s", h.UserAPIAddress, username)
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Add("Authorization", "Bearer "+token)
-
 	req = req.WithContext(ctx)
 
-	resp, err := h.Client.Do(req)
+	// Ejecutar dentro del breaker
+	result, err := h.cb.Execute(func() (interface{}, error) {
+		resp, err := h.Client.Do(req)
+		if err != nil {
+			fmt.Println("Circuit breaker error:", err)
+			return user, fmt.Errorf("breaker triggered: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			bodyBytes, _ := ioutil.ReadAll(resp.Body)
+			return nil, fmt.Errorf("user API error (%d): %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var u User
+		if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {
+			return nil, fmt.Errorf("error decoding user: %w", err)
+		}
+		return u, nil
+	})
+
+	// Si el breaker está abierto o hay error en la ejecución
 	if err != nil {
-		return user, err
+		// Aquí puedes loggear que el circuito está abierto
+		return user, fmt.Errorf("breaker triggered: %w", err)
 	}
 
-	defer resp.Body.Close()
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return user, err
+	// Verificamos el tipo de resultado
+	switch val := result.(type) {
+	case User:
+		return val, nil
+	default:
+		return user, fmt.Errorf("unexpected breaker result type: %T", val)
 	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return user, fmt.Errorf("could not get user data: %s", string(bodyBytes))
-	}
-
-	err = json.Unmarshal(bodyBytes, &user)
-
-	return user, err
 }
+
 
 func (h *UserService) getUserAPIToken(username string) (string, error) {
 	token := jwt.New(jwt.SigningMethodHS256)
