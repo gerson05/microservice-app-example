@@ -59,6 +59,14 @@ jobs:
           type=ref,event=pr
           type=raw,value=latest,enable={{is_default_branch}}
 
+    - name: Set up JDK 8 for users-api
+      if: matrix.service == 'users-api'
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '8'
+        cache: 'maven'
+
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       if: |
