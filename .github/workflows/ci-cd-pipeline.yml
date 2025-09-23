@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [frontend, todos-api, users-api, auth-api, log-processor]
+        service: [frontend, todos-api, users-api, auth-api, log-message-processor]
     
     steps:
     - name: Checkout code
@@ -70,7 +70,7 @@ jobs:
           "auth-api")
             cd auth-api && go test ./...
             ;;
-          "log-processor")
+          "log-message-processor")
             cd log-message-processor && python -m pytest
             ;;
         esac
