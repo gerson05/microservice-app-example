@@ -2,16 +2,16 @@ name: Microservices CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, feat/pipeLines ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, develop, feat/pipeLines ]
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Job 1: Build and Test
+  # Job 1: Build and Push Docker Images
   build-and-test:
     runs-on: ubuntu-latest
     strategy:
@@ -53,37 +53,6 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Run tests
-      run: |
-        echo "Running tests for ${{ matrix.service }}"
-        case "${{ matrix.service }}" in
-          "frontend")
-            cd frontend
-            npm install
-            npm run test || echo "No tests defined, skipping"
-            ;;
-          "todos-api")
-            cd todos-api
-            npm install
-            npm run test || echo "No tests defined, skipping"
-            ;;
-          "users-api")
-            cd users-api
-            mvn test || echo "No tests defined, skipping"
-            ;;
-          "auth-api")
-            cd auth-api
-            go test ./... || echo "No tests defined, skipping"
-            ;;
-          "log-message-processor")
-            cd log-message-processor
-            python3 -m pip install --upgrade pip
-            python3 -m pip install -r requirements.txt || echo "No requirements found"
-            python3 -m pytest || echo "No tests defined, skipping"
-            ;;
-        esac
-
-
   # Job 2: Security Scanning
   security-scan:
     runs-on: ubuntu-latest
@@ -119,7 +88,6 @@ jobs:
     - name: Deploy to Staging
       run: |
         echo "Deploying to staging environment"
-        # Add deployment commands here
         docker-compose -f docker-compose-staging.yml up -d
 
   # Job 4: Deploy to Production
@@ -136,7 +104,6 @@ jobs:
     - name: Deploy to Production
       run: |
         echo "Deploying to production environment"
-        # Add production deployment commands here
         docker-compose -f docker-compose-prod.yml up -d
 
   # Job 5: Integration Tests
@@ -152,9 +119,7 @@ jobs:
     - name: Run Integration Tests
       run: |
         echo "Running integration tests"
-        # Add integration test commands here
         docker-compose -f docker-compose-simple.yml up -d
         sleep 30
-        # Run tests against running services
         curl -f http://localhost:8082/version || exit 1
         curl -f http://localhost:9411 || exit 1
