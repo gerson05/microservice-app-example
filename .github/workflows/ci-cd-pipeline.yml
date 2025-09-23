@@ -15,12 +15,29 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        service: [frontend, todos-api, users-api, auth-api, log-processor]
+        service: [frontend, todos-api, users-api, auth-api, log-message-processor]
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Detect changed services
+      id: filter
+      uses: dorny/paths-filter@v3
+      with:
+        filters: |
+          frontend:
+            - 'frontend/**'
+          todos_api:
+            - 'todos-api/**'
+          users_api:
+            - 'users-api/**'
+          auth_api:
+            - 'auth-api/**'
+          log_message_processor:
+            - 'log-message-processor/**'
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -45,6 +62,12 @@ jobs:
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
+      if: |
+        (matrix.service == 'frontend' && steps.filter.outputs.frontend == 'true') ||
+        (matrix.service == 'todos-api' && steps.filter.outputs.todos_api == 'true') ||
+        (matrix.service == 'users-api' && steps.filter.outputs.users_api == 'true') ||
+        (matrix.service == 'auth-api' && steps.filter.outputs.auth_api == 'true') ||
+        (matrix.service == 'log-message-processor' && steps.filter.outputs.log_message_processor == 'true')
       with:
         context: ./${{ matrix.service }}
         push: true
@@ -54,6 +77,12 @@ jobs:
         cache-to: type=gha,mode=max
 
     - name: Run tests
+      if: |
+        (matrix.service == 'frontend' && steps.filter.outputs.frontend == 'true') ||
+        (matrix.service == 'todos-api' && steps.filter.outputs.todos_api == 'true') ||
+        (matrix.service == 'users-api' && steps.filter.outputs.users_api == 'true') ||
+        (matrix.service == 'auth-api' && steps.filter.outputs.auth_api == 'true') ||
+        (matrix.service == 'log-message-processor' && steps.filter.outputs.log_message_processor == 'true')
       run: |
         echo "Running tests for ${{ matrix.service }}"
         # Add specific test commands for each service
@@ -70,7 +99,7 @@ jobs:
           "auth-api")
             cd auth-api && go test ./...
             ;;
-          "log-processor")
+          "log-message-processor")
             cd log-message-processor && python -m pytest
             ;;
         esac
@@ -111,7 +140,7 @@ jobs:
       run: |
         echo "Deploying to staging environment"
         # Add deployment commands here
-        docker-compose -f docker-compose-staging.yml up -d
+        docker-compose -f docker-compose.yml up -d
 
   # Job 4: Deploy to Production
   deploy-production:
@@ -128,7 +157,7 @@ jobs:
       run: |
         echo "Deploying to production environment"
         # Add production deployment commands here
-        docker-compose -f docker-compose-prod.yml up -d
+        docker-compose -f docker-compose.yml up -d
 
   # Job 5: Integration Tests
   integration-tests:
@@ -144,7 +173,7 @@ jobs:
       run: |
         echo "Running integration tests"
         # Add integration test commands here
-        docker-compose -f docker-compose-simple.yml up -d
+        docker-compose -f docker-compose.yml up -d
         sleep 30
         # Run tests against running services
         curl -f http://localhost:8082/version || exit 1
