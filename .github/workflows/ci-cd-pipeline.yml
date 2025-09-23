@@ -9,6 +9,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  ACR_REGISTRY: microservicesacr.azurecr.io
 
 jobs:
   # Job 1: Build and Test
@@ -49,11 +50,18 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Log in to Azure Container Registry
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ env.ACR_REGISTRY }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+
     - name: Extract metadata
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.service }}
+        images: ${{ env.ACR_REGISTRY }}/${{ matrix.service }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
@@ -167,11 +175,24 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Deploy to Production
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Get AKS credentials
       run: |
-        echo "Deploying to production environment"
-        # Add production deployment commands here
-        docker-compose -f docker-compose.yml up -d
+        az aks get-credentials --resource-group microservices-rg --name microservices-aks --overwrite-existing
+
+    - name: Deploy to Kubernetes
+      run: |
+        echo "Deploying to production Kubernetes cluster"
+        kubectl apply -f k8s/
+        kubectl rollout status deployment/frontend -n microservices
+        kubectl rollout status deployment/auth-api -n microservices
+        kubectl rollout status deployment/todos-api -n microservices
+        kubectl rollout status deployment/users-api -n microservices
+        kubectl rollout status deployment/log-processor -n microservices
 
   # Job 5: Integration Tests
   integration-tests:
