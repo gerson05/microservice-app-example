@@ -1,5 +1,5 @@
 # Microservices Infrastructure - Outputs
-# This file defines the outputs of the infrastructure
+# This file defines the outputs of the infrastructure for Azure Container Apps
 
 output "resource_group_name" {
   description = "The name of the resource group"
@@ -9,37 +9,6 @@ output "resource_group_name" {
 output "resource_group_location" {
   description = "The location of the resource group"
   value       = azurerm_resource_group.microservices.location
-}
-
-output "kubernetes_cluster_name" {
-  description = "The name of the AKS cluster"
-  value       = azurerm_kubernetes_cluster.microservices.name
-}
-
-output "kubernetes_cluster_id" {
-  description = "The ID of the AKS cluster"
-  value       = azurerm_kubernetes_cluster.microservices.id
-}
-
-output "kubernetes_cluster_fqdn" {
-  description = "The FQDN of the AKS cluster"
-  value       = azurerm_kubernetes_cluster.microservices.fqdn
-}
-
-output "kubernetes_cluster_private_fqdn" {
-  description = "The private FQDN of the AKS cluster"
-  value       = azurerm_kubernetes_cluster.microservices.private_fqdn
-}
-
-output "kubernetes_cluster_portal_fqdn" {
-  description = "The portal FQDN of the AKS cluster"
-  value       = azurerm_kubernetes_cluster.microservices.portal_fqdn
-}
-
-output "kubernetes_cluster_kube_config" {
-  description = "The kubeconfig for the AKS cluster"
-  value       = azurerm_kubernetes_cluster.microservices.kube_config_raw
-  sensitive   = true
 }
 
 output "container_registry_name" {
@@ -134,17 +103,77 @@ output "postgresql_server_fqdn" {
 
 output "postgresql_server_port" {
   description = "The port of the PostgreSQL server (if enabled)"
-  value       = var.enable_database ? azurerm_postgresql_flexible_server.microservices[0].port : null
+  value       = var.enable_database ? 5432 : null
 }
 
 # Connection strings and configuration
 output "connection_strings" {
   description = "Connection strings for all services"
   value = {
-    redis = "redis://:${azurerm_redis_cache.microservices.primary_access_key}@${azurerm_redis_cache.microservices.hostname}:${azurerm_redis_cache.microservices.port}"
-    postgresql = var.enable_database ? "postgresql://${var.db_admin_username}:${var.db_admin_password}@${azurerm_postgresql_flexible_server.microservices[0].fqdn}:${azurerm_postgresql_flexible_server.microservices[0].port}/postgres" : null
+    redis      = "redis://:${azurerm_redis_cache.microservices.primary_access_key}@${azurerm_redis_cache.microservices.hostname}:${azurerm_redis_cache.microservices.port}"
+    postgresql = var.enable_database ? "postgresql://${var.db_admin_username}:${var.db_admin_password}@${azurerm_postgresql_flexible_server.microservices[0].fqdn}:5432/postgres" : null
   }
   sensitive = true
+}
+
+# Container App Environment outputs
+output "container_app_environment_name" {
+  description = "The name of the Container App Environment"
+  value       = azurerm_container_app_environment.microservices_env.name
+}
+
+output "container_app_environment_id" {
+  description = "The ID of the Container App Environment"
+  value       = azurerm_container_app_environment.microservices_env.id
+}
+
+output "container_app_environment_fqdn" {
+  description = "The FQDN of the Container App Environment"
+  value       = azurerm_container_app_environment.microservices_env.default_domain
+}
+
+# Container Apps outputs
+output "frontend_app_url" {
+  description = "The URL of the frontend Container App"
+  value       = "https://${azurerm_container_app.frontend.latest_revision_fqdn}"
+}
+
+output "auth_api_url" {
+  description = "The URL of the auth API Container App"
+  value       = "https://${azurerm_container_app.auth_api.latest_revision_fqdn}"
+}
+
+output "todos_api_url" {
+  description = "The URL of the todos API Container App"
+  value       = "https://${azurerm_container_app.todos_api.latest_revision_fqdn}"
+}
+
+output "users_api_url" {
+  description = "The URL of the users API Container App"
+  value       = "https://${azurerm_container_app.users_api.latest_revision_fqdn}"
+}
+
+# Container Apps information
+output "container_apps" {
+  description = "Information about all Container Apps"
+  value = {
+    frontend = {
+      name = azurerm_container_app.frontend.name
+      url  = "https://${azurerm_container_app.frontend.latest_revision_fqdn}"
+    }
+    auth_api = {
+      name = azurerm_container_app.auth_api.name
+      url  = "https://${azurerm_container_app.auth_api.latest_revision_fqdn}"
+    }
+    todos_api = {
+      name = azurerm_container_app.todos_api.name
+      url  = "https://${azurerm_container_app.todos_api.latest_revision_fqdn}"
+    }
+    users_api = {
+      name = azurerm_container_app.users_api.name
+      url  = "https://${azurerm_container_app.users_api.latest_revision_fqdn}"
+    }
+  }
 }
 
 # Deployment information
@@ -154,6 +183,7 @@ output "deployment_info" {
     environment = var.environment
     location    = azurerm_resource_group.microservices.location
     created_at  = timestamp()
-    version     = "1.0.0"
+    version     = "2.0.0"
+    platform    = "Azure Container Apps"
   }
 }

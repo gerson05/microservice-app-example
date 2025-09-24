@@ -1,23 +1,5 @@
 # Microservices Infrastructure - Main Configuration
-# This file defines the main infrastructure components
-
-terraform {
-  required_version = ">= 1.0"
-  required_providers {
-    azurerm = {
-      source  = "hashicorp/azurerm"
-      version = "~> 3.0"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.0"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.0"
-    }
-  }
-}
+# This file defines the main infrastructure components for Azure Container Apps
 
 # Configure the Azure Provider
 provider "azurerm" {
@@ -52,15 +34,25 @@ resource "azurerm_virtual_network" "microservices" {
   }
 }
 
-# Subnet for AKS
-resource "azurerm_subnet" "aks" {
-  name                 = "aks-subnet"
+# Subnet for Container Apps Environment
+resource "azurerm_subnet" "container_apps" {
+  name                 = "container-apps-subnet"
   resource_group_name  = azurerm_resource_group.microservices.name
   virtual_network_name = azurerm_virtual_network.microservices.name
-  address_prefixes     = ["10.0.1.0/24"]
+  address_prefixes     = ["10.0.0.0/23"]
+  
+  delegation {
+    name = "Microsoft.App.environments"
+    service_delegation {
+      name = "Microsoft.App/environments"
+      actions = [
+        "Microsoft.Network/virtualNetworks/subnets/join/action",
+      ]
+    }
+  }
 }
 
-# Subnet for Application Gateway
+# Subnet for Application Gateway (optional)
 resource "azurerm_subnet" "appgw" {
   name                 = "appgw-subnet"
   resource_group_name  = azurerm_resource_group.microservices.name
@@ -117,57 +109,17 @@ resource "azurerm_application_insights" "microservices" {
   }
 }
 
-# Azure Kubernetes Service
-resource "azurerm_kubernetes_cluster" "microservices" {
-  name                = "microservices-aks"
-  location            = azurerm_resource_group.microservices.location
-  resource_group_name = azurerm_resource_group.microservices.name
-  dns_prefix          = "microservices-aks"
-  kubernetes_version  = var.kubernetes_version
-
-  default_node_pool {
-    name       = "default"
-    node_count = var.node_count
-    vm_size    = var.node_size
-    vnet_subnet_id = azurerm_subnet.aks.id
-  }
-
-  identity {
-    type = "SystemAssigned"
-  }
-
-  network_profile {
-    network_plugin    = "azure"
-    load_balancer_sku = "standard"
-  }
-
-  oms_agent {
-    log_analytics_workspace_id = azurerm_log_analytics_workspace.microservices.id
-  }
-
-  tags = {
-    Environment = var.environment
-    Project     = "microservices"
-  }
-}
-
-# Role assignment for AKS to access ACR
-resource "azurerm_role_assignment" "aks_acr" {
-  scope                = azurerm_container_registry.microservices.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_kubernetes_cluster.microservices.kubelet_identity[0].object_id
-}
 
 # Azure Redis Cache
 resource "azurerm_redis_cache" "microservices" {
-  name                = "microservices-redis"
-  location            = azurerm_resource_group.microservices.location
-  resource_group_name = azurerm_resource_group.microservices.name
-  capacity            = 1
-  family              = "C"
-  sku_name            = "Standard"
-  enable_non_ssl_port = false
-  minimum_tls_version = "1.2"
+  name                 = "microservices-redis"
+  location             = azurerm_resource_group.microservices.location
+  resource_group_name  = azurerm_resource_group.microservices.name
+  capacity             = 1
+  family               = "C"
+  sku_name             = "Standard"
+  non_ssl_port_enabled = false
+  minimum_tls_version  = "1.2"
 
   tags = {
     Environment = var.environment
@@ -177,16 +129,16 @@ resource "azurerm_redis_cache" "microservices" {
 
 # Azure Database for PostgreSQL (if needed)
 resource "azurerm_postgresql_flexible_server" "microservices" {
-  count               = var.enable_database ? 1 : 0
-  name                = "microservices-postgres"
-  resource_group_name = azurerm_resource_group.microservices.name
-  location            = azurerm_resource_group.microservices.location
-  version             = "13"
-  administrator_login = var.db_admin_username
+  count                  = var.enable_database ? 1 : 0
+  name                   = "microservices-postgres"
+  resource_group_name    = azurerm_resource_group.microservices.name
+  location               = azurerm_resource_group.microservices.location
+  version                = "13"
+  administrator_login    = var.db_admin_username
   administrator_password = var.db_admin_password
-  zone                = "1"
-  storage_mb          = 32768
-  sku_name            = "GP_Standard_D2s_v3"
+  zone                   = "1"
+  storage_mb             = 32768
+  sku_name               = "GP_Standard_D2s_v3"
 
   tags = {
     Environment = var.environment
@@ -246,4 +198,180 @@ resource "azurerm_key_vault_secret" "redis_password" {
   name         = "redis-password"
   value        = azurerm_redis_cache.microservices.primary_access_key
   key_vault_id = azurerm_key_vault.microservices.id
+}
+# Azure Container App Environment
+resource "azurerm_container_app_environment" "microservices_env" {
+  name                       = "microservices-env"
+  location                   = azurerm_resource_group.microservices.location
+  resource_group_name        = azurerm_resource_group.microservices.name
+  # infrastructure_subnet_id   = azurerm_subnet.container_apps.id  # Comentado temporalmente
+  # internal_load_balancer_enabled = var.environment == "prod" ? true : false  # Requiere subnet
+  # zone_redundancy_enabled    = var.environment == "prod" ? true : false  # Requiere subnet
+  # mutual_tls_enabled         = var.environment == "prod" ? true : false  # Requiere subnet
+
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.microservices.id
+
+  tags = {
+    Environment = var.environment
+    Project     = "microservices"
+  }
+}
+
+# Frontend Container App
+resource "azurerm_container_app" "frontend" {
+  name                         = "frontend-app"
+  container_app_environment_id = azurerm_container_app_environment.microservices_env.id
+  resource_group_name          = azurerm_resource_group.microservices.name
+  revision_mode                = "Single"
+
+  template {
+    container {
+      name   = "frontend"
+      image  = "nginx:alpine"  
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name  = "NODE_ENV"
+        value = var.environment
+      }
+    }
+
+    min_replicas = 1
+    max_replicas = var.environment == "prod" ? 5 : 2
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "microservices"
+    Service     = "frontend"
+  }
+}
+
+# Auth API Container App
+resource "azurerm_container_app" "auth_api" {
+  name                         = "auth-api-app"
+  container_app_environment_id = azurerm_container_app_environment.microservices_env.id
+  resource_group_name          = azurerm_resource_group.microservices.name
+  revision_mode                = "Single"
+
+  secret {
+    name  = "jwt-secret"
+    value = var.jwt_secret
+  }
+
+  secret {
+    name  = "redis-password"
+    value = azurerm_redis_cache.microservices.primary_access_key
+  }
+
+  template {
+    container {
+      name   = "auth-api"
+      image  = "httpd:alpine"  # Imagen temporal para testing
+      cpu    = 0.5
+      memory = "1Gi"
+
+      env {
+        name  = "REDIS_HOST"
+        value = azurerm_redis_cache.microservices.hostname
+      }
+
+      env {
+        name        = "REDIS_PASSWORD"
+        secret_name = "redis-password"
+      }
+
+      env {
+        name        = "JWT_SECRET"
+        secret_name = "jwt-secret"
+      }
+
+      env {
+        name  = "PORT"
+        value = "8080"
+      }
+    }
+
+    min_replicas = 1
+    max_replicas = var.environment == "prod" ? 3 : 2
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "microservices"
+    Service     = "auth-api"
+  }
+}
+
+# Todos API Container App
+resource "azurerm_container_app" "todos_api" {
+  name                         = "todos-api-app"
+  container_app_environment_id = azurerm_container_app_environment.microservices_env.id
+  resource_group_name          = azurerm_resource_group.microservices.name
+  revision_mode                = "Single"
+
+  template {
+    container {
+      name   = "todos-api"
+      image  = "httpd:alpine"  # Imagen temporal para testing
+      cpu    = 0.5
+      memory = "1Gi"
+
+      env {
+        name  = "PORT"
+        value = "3000"
+      }
+
+      env {
+        name  = "NODE_ENV"
+        value = var.environment
+      }
+    }
+
+    min_replicas = 1
+    max_replicas = var.environment == "prod" ? 3 : 2
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "microservices"
+    Service     = "todos-api"
+  }
+}
+
+# Users API Container App
+resource "azurerm_container_app" "users_api" {
+  name                         = "users-api-app"
+  container_app_environment_id = azurerm_container_app_environment.microservices_env.id
+  resource_group_name          = azurerm_resource_group.microservices.name
+  revision_mode                = "Single"
+
+  template {
+    container {
+      name   = "users-api"
+      image  = "httpd:alpine" 
+      cpu    = 0.5
+      memory = "1Gi"
+
+      env {
+        name  = "PORT"
+        value = "8080"
+      }
+
+      env {
+        name  = "SPRING_PROFILES_ACTIVE"
+        value = var.environment
+      }
+    }
+
+    min_replicas = 1
+    max_replicas = var.environment == "prod" ? 3 : 2
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "microservices"
+    Service     = "users-api"
+  }
 }

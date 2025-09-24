@@ -11,34 +11,39 @@ variable "environment" {
   description = "The environment name (dev, staging, prod)"
   type        = string
   default     = "dev"
-  
+
   validation {
     condition     = contains(["dev", "staging", "prod"], var.environment)
     error_message = "Environment must be one of: dev, staging, prod."
   }
 }
 
-variable "kubernetes_version" {
-  description = "The Kubernetes version to use for AKS"
+variable "container_app_environment_name" {
+  description = "The name of the Container App Environment"
   type        = string
-  default     = "1.28"
+  default     = "microservices-env"
 }
 
-variable "node_count" {
-  description = "The number of nodes in the AKS cluster"
+variable "min_replicas" {
+  description = "Minimum number of replicas for Container Apps"
   type        = number
-  default     = 2
-  
+  default     = 1
+
   validation {
-    condition     = var.node_count >= 1 && var.node_count <= 10
-    error_message = "Node count must be between 1 and 10."
+    condition     = var.min_replicas >= 0 && var.min_replicas <= 10
+    error_message = "Min replicas must be between 0 and 10."
   }
 }
 
-variable "node_size" {
-  description = "The size of the AKS nodes"
-  type        = string
-  default     = "Standard_D2s_v3"
+variable "max_replicas" {
+  description = "Maximum number of replicas for Container Apps"
+  type        = number
+  default     = 3
+
+  validation {
+    condition     = var.max_replicas >= 1 && var.max_replicas <= 20
+    error_message = "Max replicas must be between 1 and 20."
+  }
 }
 
 variable "enable_database" {
@@ -66,6 +71,52 @@ variable "jwt_secret" {
   type        = string
   default     = "your-super-secret-jwt-key-change-this-in-production"
   sensitive   = true
+}
+
+variable "container_cpu" {
+  description = "CPU allocation for containers (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)"
+  type        = number
+  default     = 0.5
+
+  validation {
+    condition = contains([0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0], var.container_cpu)
+    error_message = "Container CPU must be one of: 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0."
+  }
+}
+
+variable "container_memory" {
+  description = "Memory allocation for containers (0.5Gi, 1Gi, 1.5Gi, 2Gi, 2.5Gi, 3Gi, 3.5Gi, 4Gi)"
+  type        = string
+  default     = "1Gi"
+
+  validation {
+    condition = contains(["0.5Gi", "1Gi", "1.5Gi", "2Gi", "2.5Gi", "3Gi", "3.5Gi", "4Gi"], var.container_memory)
+    error_message = "Container memory must be one of: 0.5Gi, 1Gi, 1.5Gi, 2Gi, 2.5Gi, 3Gi, 3.5Gi, 4Gi."
+  }
+}
+
+variable "enable_internal_load_balancer" {
+  description = "Enable internal load balancer for Container App Environment"
+  type        = bool
+  default     = false
+}
+
+variable "enable_zone_redundancy" {
+  description = "Enable zone redundancy for Container App Environment"
+  type        = bool
+  default     = false
+}
+
+variable "enable_mutual_tls" {
+  description = "Enable mutual TLS for Container App Environment"
+  type        = bool
+  default     = false
+}
+
+variable "admin_email" {
+  description = "Email address for receiving alerts and notifications"
+  type        = string
+  default     = ""
 }
 
 variable "tags" {
