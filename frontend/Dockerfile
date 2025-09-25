@@ -1,22 +1,17 @@
-# Frontend Dockerfile
-FROM node:8.17.0-alpine
+FROM node:14-alpine AS build-stage
+
+RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
-
-# Copy package files
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
-
-# Copy source code
 COPY . .
-
-# Build the application
 RUN npm run build
 
-# Expose port
-EXPOSE 8080
+FROM nginx:alpine
 
-# Start the application
-CMD ["npm", "run", "dev"]
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+COPY --from=build-stage /app/dist /usr/share/nginx/html
+RUN rm -f /etc/nginx/conf.d/default.conf
+
+CMD ["/bin/sh", "-c", "envsubst '${AUTH_HOST} ${AUTH_API_PORT} ${TODOS_API_HOST} ${TODO_API_PORT} ${ZIPKIN_HOST} ${ZIPKIN_PORT}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]

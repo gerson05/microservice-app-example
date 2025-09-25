@@ -1,33 +1,28 @@
-# Users API Dockerfile
-FROM maven:3.6.3-openjdk-8 AS builder
+# users-api/Dockerfile - multi-stage build
 
+# Stage 1: build with Maven (uses Java 8 to match the project)
+FROM maven:3.6.3-jdk-8 AS builder
 WORKDIR /app
 
-# Copy pom.xml and download dependencies
+# Copy Maven wrapper and project files
+COPY mvnw .
+COPY .mvn .mvn
 COPY pom.xml .
-RUN mvn dependency:go-offline -B
 
-# Copy source code
+# Copy source and build
 COPY src ./src
 
-# Build the application
-RUN mvn clean package -DskipTests
+# Ensure wrapper is executable and build the project (skip tests to speed up)
+RUN chmod +x mvn || true
+RUN mvn -B -DskipTests clean package
 
-# Final stage
+# Stage 2: runtime
 FROM openjdk:8-jre-alpine
-
 WORKDIR /app
 
-# Copy the jar file
-COPY --from=builder /app/target/*.jar app.jar
+COPY --from=builder /app/target/*.jar ./users-api.jar
 
-# Expose port
+# Expose port and run
 EXPOSE 8083
-
-# Set environment variables
 ENV SERVER_PORT=8083
-ENV JWT_SECRET=myfancysecret
-ENV SPRING_ZIPKIN_BASEURL=http://zipkin:9411/
-
-# Start the application
-CMD ["java", "-jar", "app.jar"]
+CMD ["java", "-jar", "./users-api.jar"]

@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
-
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
@@ -13,7 +13,6 @@ import (
 	"github.com/labstack/echo/middleware"
 	gommonlog "github.com/labstack/gommon/log"
 	"github.com/sony/gobreaker"
-	"errors"
 )
 
 var (
@@ -22,6 +21,9 @@ var (
 
 	// ErrWrongCredentials indicates that login attempt failed because of incorrect login or password
 	ErrWrongCredentials = echo.NewHTTPError(http.StatusUnauthorized, "username or password is invalid")
+
+	// ErrServiceUnavailable returned when downstream service is unavailable (circuit open)
+	ErrServiceUnavailable = echo.NewHTTPError(http.StatusServiceUnavailable, "service temporarily unavailable, try again later")
 
 	jwtSecret = "myfancysecret"
 )
@@ -35,6 +37,17 @@ func main() {
 		jwtSecret = envJwtSecret
 	}
 
+	// configure circuit breaker settings for Users API
+	cbSettings := gobreaker.Settings{
+		Name:        "UsersAPI",
+		MaxRequests: 3,
+		Interval:    60 * time.Second,
+		Timeout:     10 * time.Second,
+		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
+			log.Printf("circuit breaker '%s' state change: %v -> %v", name, from, to)
+		},
+	}
+
 	userService := UserService{
 		Client:         http.DefaultClient,
 		UserAPIAddress: userAPIAddress,
@@ -43,16 +56,7 @@ func main() {
 			"johnd_foo":   nil,
 			"janed_ddd":   nil,
 		},
-		cb: gobreaker.NewCircuitBreaker(gobreaker.Settings{
-			Name:        "UserServiceCB",
-			MaxRequests: 5,
-			Interval:    60 * time.Second,
-			Timeout:     30 * time.Second,
-			ReadyToTrip: func(counts gobreaker.Counts) bool {
-				failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
-				return counts.Requests >= 5 && failureRatio >= 0.6
-			},
-		}),
+		Breaker: gobreaker.NewCircuitBreaker(cbSettings),
 	}
 
 	e := echo.New()
@@ -82,6 +86,22 @@ func main() {
 
 	e.POST("/login", getLoginHandler(userService))
 
+	// Endpoint to inspect circuit breaker state for testing
+	e.GET("/breaker", func(c echo.Context) error {
+		state := "unknown"
+		if userService.Breaker != nil {
+			switch userService.Breaker.State() {
+			case gobreaker.StateClosed:
+				state = "closed"
+			case gobreaker.StateOpen:
+				state = "open"
+			case gobreaker.StateHalfOpen:
+				state = "half-open"
+			}
+		}
+		return c.JSON(http.StatusOK, map[string]string{"state": state})
+	})
+
 	// Start server
 	e.Logger.Fatal(e.Start(hostport))
 }
@@ -103,16 +123,18 @@ func getLoginHandler(userService UserService) echo.HandlerFunc {
 		ctx := c.Request().Context()
 		user, err := userService.Login(ctx, requestData.Username, requestData.Password)
 		if err != nil {
-			// Manejo explícito del breaker abierto
-			if errors.Is(err, gobreaker.ErrOpenState) {
-				log.Printf("Circuit breaker OPEN: servicio de usuarios no disponible")
-				return echo.NewHTTPError(http.StatusServiceUnavailable, "Servicio de usuarios no disponible temporalmente")
+			if err == ErrWrongCredentials {
+				return ErrWrongCredentials
 			}
-			if err != ErrWrongCredentials {
-				log.Printf("could not authorize user '%s': %s", requestData.Username, err.Error())
-				return ErrHttpGenericMessage
+
+			//  Si el servicio de usuarios está saturado o en modo de protección, responder con 503
+			if errors.Is(err, gobreaker.ErrOpenState) || errors.Is(err, gobreaker.ErrTooManyRequests) {
+				log.Printf("Servicio temporalmente desconectado '%s': %s", requestData.Username, err.Error())
+				return ErrServiceUnavailable
 			}
-			return ErrWrongCredentials
+
+			log.Printf("could not authorize user '%s': %s", requestData.Username, err.Error())
+			return ErrHttpGenericMessage
 		}
 		token := jwt.New(jwt.SigningMethodHS256)
 

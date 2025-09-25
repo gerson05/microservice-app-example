@@ -1,119 +1,142 @@
-version: '3.8'
+  version: '3.8'
 
-services:
-  # Redis for message queue
-  redis:
-    image: redis:7.0-alpine
-    container_name: redis
-    ports:
-      - "6379:6379"
-    restart: unless-stopped
-    networks:
-      - microservices-network
+  services:
+    # Redis for message queue
+    redis:
+      image: redis:7-alpine
+      ports:
+        - "6379:6379"
+      networks:
+        - microservices-network
+      healthcheck:
+        test: ["CMD", "redis-cli", "ping"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
 
-  # Zipkin for distributed tracing
-  zipkin:
-    image: openzipkin/zipkin:latest
-    container_name: zipkin
-    ports:
-      - "9411:9411"
-    restart: unless-stopped
-    networks:
-      - microservices-network
+    # Zipkin for distributed tracing
+    zipkin:
+      image: openzipkin/zipkin:latest
+      container_name: zipkin
+      ports:
+        - "9411:9411"
+      restart: unless-stopped
+      networks:
+        - microservices-network
 
-  # Users API (Java Spring Boot)
-  users-api:
-    build: ./users-api
-    container_name: users-api
-    ports:
-      - "8083:8083"
-    environment:
-      - SERVER_PORT=8083
-      - JWT_SECRET=myfancysecret
-      - SPRING_ZIPKIN_BASEURL=http://zipkin:9411/
-      - SPRING_REDIS_HOST=redis
-      - SPRING_REDIS_PORT=6379
-    depends_on:
-      - redis
-      - zipkin
-    restart: unless-stopped
-    networks:
-      - microservices-network
+    # Users API (Java Spring Boot)
+    users-api:
+      build: ./users-api
+      ports:
+        - "8083:8083"
+      environment:
+        - JWT_SECRET=PRFT
+        - SERVER_PORT=8083
+        - ZIPKIN_URL=http://zipkin:9411
+      networks:
+        - microservices-network
+      depends_on:
+        redis:
+          condition: service_healthy
+      healthcheck:
+        test: ["CMD", "sh", "-c", "netstat -an | grep 8083 | grep LISTEN"]
+        interval: 30s
+        timeout: 10s
+        retries: 3
 
-
-  # Auth API (Go)
-  auth-api:
-    build: ./auth-api
-    container_name: auth-api
-    ports:
-      - "8081:8081"
-    environment:
-      - AUTH_API_PORT=8081
-      - JWT_SECRET=myfancysecret
-      - USERS_API_ADDRESS=http://users-api:8083
-      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
-    depends_on:
-      - users-api
-      - zipkin
-    restart: unless-stopped
-    networks:
-      - microservices-network
-
+    # Auth API (Go)
+    auth-api:
+      build: ./auth-api
+      ports:
+        - "8081:8081"
+      environment:
+        - JWT_SECRET=PRFT
+        - AUTH_API_PORT=8081
+        - USERS_API_ADDRESS=http://users-api:8083
+        - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      networks:
+        - microservices-network
+      depends_on:
+        users-api:
+          condition: service_healthy
+      healthcheck:
+        test:
+          [
+            "CMD",
+            "wget",
+            "--no-verbose",
+            "--tries=1",
+            "--spider",
+            "http://localhost:8081/version",
+          ]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+  
   # TODOs API (Node.js)
-  todos-api:
-    build: ./todos-api
-    container_name: todos-api
-    ports:
-      - "8082:8082"
-    environment:
-      - TODO_API_PORT=8082
-      - JWT_SECRET=myfancysecret
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_CHANNEL=log_channel
-      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
-    depends_on:
-      - redis
-      - zipkin
-    restart: unless-stopped
-    networks:
-      - microservices-network
+    todos-api:
+      build: ./todos-api
+      ports:
+        - "8082:8082"
+      environment:
+        - JWT_SECRET=PRFT
+        - TODO_API_PORT=8082
+        - REDIS_HOST=redis
+        - REDIS_PORT=6379
+        - REDIS_CHANNEL=log_channel
+        - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      networks:
+        - microservices-network
+      depends_on:
+        redis:
+          condition: service_healthy
+        auth-api:
+          condition: service_healthy
+      healthcheck:
+        test: ["CMD", "sh", "-c", "netstat -an | grep 8082 | grep LISTEN"]
+        interval: 30s
+        timeout: 10s
+        retries: 3
 
-  # Log Message Processor (Python)
-  log-processor:
-    build: ./log-message-processor
-    container_name: log-processor
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_CHANNEL=log_channel
-      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
-    depends_on:
-      - redis
-      - zipkin
-    restart: unless-stopped
-    networks:
-      - microservices-network
+    # Log Message Processor (Python)
+    log-processor:
+      build: ./log-message-processor
+      container_name: log-processor
+      environment:
+        - REDIS_HOST=redis
+        - REDIS_PORT=6379
+        - REDIS_CHANNEL=log_channel
+        - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      depends_on:
+        - redis
+        - zipkin
+      restart: unless-stopped
+      networks:
+        - microservices-network
 
-  # Frontend (Vue.js)
-  frontend:
-    build: ./frontend
-    container_name: frontend
-    ports:
-      - "8080:8080"
-    environment:
-      - NODE_ENV=development
-      - AUTH_API_ADDRESS=http://auth-api:8081
-      - TODOS_API_ADDRESS=http://todos-api:8082
-      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
-    depends_on:
-      - auth-api
-      - users-api
-      - todos-api
-    restart: unless-stopped
-    networks:
-      - microservices-network
+      # Frontend (Vue.js)
+    frontend:
+      build:
+        context: ./frontend
+        dockerfile: Dockerfile
+      ports:
+        - "8080:8080"
+      environment:
+        - PORT=8080
+        - AUTH_API_PORT=8081
+        - AUTH_HOST=auth-api
+        - TODO_API_PORT=8082
+        - TODOS_API_HOST=todos-api
+        - ZIPKIN_PORT=9411/api/v2/spans
+        - ZIPKIN_HOST=zipkin
+      networks:
+        - microservices-network
+      depends_on:
+        auth-api:
+          condition: service_healthy
+        todos-api:
+          condition: service_healthy
 
-networks:
-  microservices-network:
-    driver: bridge
+  networks:
+    microservices-network:
+      driver: bridge

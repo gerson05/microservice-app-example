@@ -1,6 +1,3 @@
-# Microservices Infrastructure - Main Configuration
-# This file defines the main infrastructure components for Azure Container Apps
-
 # Configure the Azure Provider
 provider "azurerm" {
   features {}
@@ -40,7 +37,7 @@ resource "azurerm_subnet" "container_apps" {
   resource_group_name  = azurerm_resource_group.microservices.name
   virtual_network_name = azurerm_virtual_network.microservices.name
   address_prefixes     = ["10.0.0.0/23"]
-  
+
   delegation {
     name = "Microsoft.App.environments"
     service_delegation {
@@ -60,6 +57,13 @@ resource "azurerm_subnet" "appgw" {
   address_prefixes     = ["10.0.2.0/24"]
 }
 
+# Random string for unique naming
+resource "random_string" "suffix" {
+  length  = 8
+  special = false
+  upper   = false
+}
+
 # Azure Container Registry
 resource "azurerm_container_registry" "microservices" {
   name                = "microservicesacr${random_string.suffix.result}"
@@ -72,13 +76,6 @@ resource "azurerm_container_registry" "microservices" {
     Environment = var.environment
     Project     = "microservices"
   }
-}
-
-# Random string for unique naming
-resource "random_string" "suffix" {
-  length  = 8
-  special = false
-  upper   = false
 }
 
 # Log Analytics Workspace
@@ -109,17 +106,16 @@ resource "azurerm_application_insights" "microservices" {
   }
 }
 
-
 # Azure Redis Cache
 resource "azurerm_redis_cache" "microservices" {
-  name                 = "microservices-redis"
-  location             = azurerm_resource_group.microservices.location
-  resource_group_name  = azurerm_resource_group.microservices.name
-  capacity             = 1
-  family               = "C"
-  sku_name             = "Standard"
+  name                = "microservices-redis"
+  location            = azurerm_resource_group.microservices.location
+  resource_group_name = azurerm_resource_group.microservices.name
+  capacity            = 1
+  family              = "C"
+  sku_name            = "Standard"
   non_ssl_port_enabled = false
-  minimum_tls_version  = "1.2"
+  minimum_tls_version = "1.2"
 
   tags = {
     Environment = var.environment
@@ -129,16 +125,16 @@ resource "azurerm_redis_cache" "microservices" {
 
 # Azure Database for PostgreSQL (if needed)
 resource "azurerm_postgresql_flexible_server" "microservices" {
-  count                  = var.enable_database ? 1 : 0
-  name                   = "microservices-postgres"
-  resource_group_name    = azurerm_resource_group.microservices.name
-  location               = azurerm_resource_group.microservices.location
-  version                = "13"
-  administrator_login    = var.db_admin_username
+  count               = var.enable_database ? 1 : 0
+  name                = "microservices-postgres"
+  resource_group_name = azurerm_resource_group.microservices.name
+  location            = azurerm_resource_group.microservices.location
+  version             = "13"
+  administrator_login = var.db_admin_username
   administrator_password = var.db_admin_password
-  zone                   = "1"
-  storage_mb             = 32768
-  sku_name               = "GP_Standard_D2s_v3"
+  zone                = "1"
+  storage_mb          = 32768
+  sku_name            = "GP_Standard_D2s_v3"
 
   tags = {
     Environment = var.environment
@@ -199,16 +195,12 @@ resource "azurerm_key_vault_secret" "redis_password" {
   value        = azurerm_redis_cache.microservices.primary_access_key
   key_vault_id = azurerm_key_vault.microservices.id
 }
+
 # Azure Container App Environment
 resource "azurerm_container_app_environment" "microservices_env" {
   name                       = "microservices-env"
   location                   = azurerm_resource_group.microservices.location
   resource_group_name        = azurerm_resource_group.microservices.name
-  # infrastructure_subnet_id   = azurerm_subnet.container_apps.id  # Comentado temporalmente
-  # internal_load_balancer_enabled = var.environment == "prod" ? true : false  # Requiere subnet
-  # zone_redundancy_enabled    = var.environment == "prod" ? true : false  # Requiere subnet
-  # mutual_tls_enabled         = var.environment == "prod" ? true : false  # Requiere subnet
-
   log_analytics_workspace_id = azurerm_log_analytics_workspace.microservices.id
 
   tags = {
@@ -219,7 +211,7 @@ resource "azurerm_container_app_environment" "microservices_env" {
 
 # Frontend Container App
 resource "azurerm_container_app" "frontend" {
-  name                         = "frontend-app"
+  name                         = "frontend"
   container_app_environment_id = azurerm_container_app_environment.microservices_env.id
   resource_group_name          = azurerm_resource_group.microservices.name
   revision_mode                = "Single"
@@ -227,7 +219,7 @@ resource "azurerm_container_app" "frontend" {
   template {
     container {
       name   = "frontend"
-      image  = "nginx:alpine"  
+      image  = "alejomunoz/frontend:latest"
       cpu    = 0.25
       memory = "0.5Gi"
 
@@ -236,9 +228,6 @@ resource "azurerm_container_app" "frontend" {
         value = var.environment
       }
     }
-
-    min_replicas = 1
-    max_replicas = var.environment == "prod" ? 5 : 2
   }
 
   tags = {
@@ -250,51 +239,24 @@ resource "azurerm_container_app" "frontend" {
 
 # Auth API Container App
 resource "azurerm_container_app" "auth_api" {
-  name                         = "auth-api-app"
+  name                         = "auth-api"
   container_app_environment_id = azurerm_container_app_environment.microservices_env.id
   resource_group_name          = azurerm_resource_group.microservices.name
   revision_mode                = "Single"
 
-  secret {
-    name  = "jwt-secret"
-    value = var.jwt_secret
-  }
-
-  secret {
-    name  = "redis-password"
-    value = azurerm_redis_cache.microservices.primary_access_key
-  }
-
   template {
+    min_replicas = var.min_replicas
     container {
       name   = "auth-api"
-      image  = "httpd:alpine"  # Imagen temporal para testing
+      image  = "alejomunoz/auth-api:latest"
       cpu    = 0.5
       memory = "1Gi"
 
       env {
-        name  = "REDIS_HOST"
-        value = azurerm_redis_cache.microservices.hostname
-      }
-
-      env {
-        name        = "REDIS_PASSWORD"
-        secret_name = "redis-password"
-      }
-
-      env {
-        name        = "JWT_SECRET"
-        secret_name = "jwt-secret"
-      }
-
-      env {
         name  = "PORT"
-        value = "8080"
+        value = "8081"
       }
     }
-
-    min_replicas = 1
-    max_replicas = var.environment == "prod" ? 3 : 2
   }
 
   tags = {
@@ -306,7 +268,7 @@ resource "azurerm_container_app" "auth_api" {
 
 # Todos API Container App
 resource "azurerm_container_app" "todos_api" {
-  name                         = "todos-api-app"
+  name                         = "todos-api"
   container_app_environment_id = azurerm_container_app_environment.microservices_env.id
   resource_group_name          = azurerm_resource_group.microservices.name
   revision_mode                = "Single"
@@ -314,7 +276,7 @@ resource "azurerm_container_app" "todos_api" {
   template {
     container {
       name   = "todos-api"
-      image  = "httpd:alpine"  # Imagen temporal para testing
+      image  = "alejomunoz/todos-api:latest"
       cpu    = 0.5
       memory = "1Gi"
 
@@ -328,10 +290,8 @@ resource "azurerm_container_app" "todos_api" {
         value = var.environment
       }
     }
-
-    min_replicas = 1
-    max_replicas = var.environment == "prod" ? 3 : 2
   }
+
 
   tags = {
     Environment = var.environment
@@ -342,7 +302,7 @@ resource "azurerm_container_app" "todos_api" {
 
 # Users API Container App
 resource "azurerm_container_app" "users_api" {
-  name                         = "users-api-app"
+  name                         = "users-api"
   container_app_environment_id = azurerm_container_app_environment.microservices_env.id
   resource_group_name          = azurerm_resource_group.microservices.name
   revision_mode                = "Single"
@@ -350,7 +310,7 @@ resource "azurerm_container_app" "users_api" {
   template {
     container {
       name   = "users-api"
-      image  = "httpd:alpine" 
+      image  = "alejomunoz/users-api:latest"
       cpu    = 0.5
       memory = "1Gi"
 
@@ -364,14 +324,63 @@ resource "azurerm_container_app" "users_api" {
         value = var.environment
       }
     }
-
-    min_replicas = 1
-    max_replicas = var.environment == "prod" ? 3 : 2
   }
+
 
   tags = {
     Environment = var.environment
     Project     = "microservices"
     Service     = "users-api"
+  }
+}
+
+# Log Processor Container App (no HTTP, solo internal)
+resource "azurerm_container_app" "log_processor" {
+  name                         = "log-processor"
+  container_app_environment_id = azurerm_container_app_environment.microservices_env.id
+  resource_group_name          = azurerm_resource_group.microservices.name
+  revision_mode                = "Single"
+
+  template {
+    container {
+      name   = "log-processor"
+      image  = "alejomunoz/log-processor:latest"
+      cpu    = 0.5
+      memory = "1Gi"
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "microservices"
+    Service     = "log-processor"
+  }
+}
+
+resource "azurerm_container_app" "zipkin" {
+  name                         = "zipkin"
+  container_app_environment_id = azurerm_container_app_environment.microservices_env.id
+  resource_group_name          = azurerm_resource_group.microservices.name
+  revision_mode                = "Single"
+
+  template {
+    container {
+      name   = "zipkin"
+      image  = "openzipkin/zipkin:latest"
+      cpu    = 0.5
+      memory = "1Gi"
+
+      env {
+        name  = "STORAGE_TYPE"
+        value = "mem"
+      }
+    }
+
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "microservices"
+    Service     = "zipkin"
   }
 }

@@ -10,21 +10,20 @@ RUN go mod download
 # Copiar el resto del código
 COPY . .
 
-# Compilar todo el proyecto, no solo main.go
-RUN go build -o auth-api .
+# Inicializar módulos y construir
+RUN go mod tidy
+RUN CGO_ENABLED=0 go build -o auth-api
 
-# Final stage
+# Imagen final
 FROM alpine:latest
-RUN apk --no-cache add ca-certificates
 
+RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
+# Copiar el binario
 COPY --from=builder /app/auth-api .
 
 EXPOSE 8081
-
 ENV AUTH_API_PORT=8081
-ENV JWT_SECRET=myfancysecret
-ENV USERS_API_ADDRESS=http://users-api:8083
 
 CMD ["./auth-api"]
