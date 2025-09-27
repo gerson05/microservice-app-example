@@ -1,29 +1,24 @@
 output "cae_id" {
-  description = "ID del entorno de Container Apps."
-  value       = azurerm_container_app_environment.cae.id
-}
-
-output "acr_admin_password" {
-  description = "Contraseña del ACR."
-  value       = azurerm_container_registry.acr.admin_password
-  sensitive   = true
-}
-
-output "resource_group_name" {
-  description = "El nombre del grupo de recursos."
-  value       = azurerm_resource_group.rg.name
-}
-output "acr_login_server" {
-  description = "El servidor de login del ACR."
-  value       = azurerm_container_registry.acr.login_server
+  value = azurerm_container_app_environment.apps_env.id
 }
 
 output "acr_admin_username" {
-  description = "Admin del ACR."
-  value       = azurerm_container_registry.acr.admin_username
+  value = azurerm_container_registry.acr_main.admin_username
+}
+
+output "acr_admin_password" {
+  value     = azurerm_container_registry.acr_main.admin_password
+  sensitive = true
+}
+
+output "acr_login_server" {
+  value = azurerm_container_registry.acr_main.login_server
+}
+
+output "resource_group_name" {
+  value = azurerm_resource_group.core_rg.name
 }
 
 output "location" {
-  description = "La ubicación del grupo de recursos."
-  value       = azurerm_resource_group.rg.location
+  value = azurerm_resource_group.core_rg.location
 }
