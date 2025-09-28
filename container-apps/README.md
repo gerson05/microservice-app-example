@@ -6,28 +6,28 @@ Este directorio contiene la configuración para desplegar los microservicios en 
 
 ```
 container-apps/
-├── frontend-app.yaml              # Frontend (Vue.js)
-├── auth-api-app.yaml              # Auth API (Go)
-├── todos-api-app.yaml             # Todos API (Node.js)
-├── users-api-app.yaml             # Users API (Spring Boot)
-├── log-processor-app.yaml         # Log Processor (Python)
-├── zipkin-app.yaml                # Zipkin tracing
-├── elasticsearch-app.yaml         # Elasticsearch
-├── monitoring-app.yaml            # Prometheus + Grafana
-├── environment.yaml               # Container Apps Environment
-├── deploy.sh                      # Script de despliegue automático
+├── apps.json                      # Configuración de todas las aplicaciones
+├── deploy-container-apps.sh       # Script completo de despliegue
+├── quick-deploy.sh                # Script rápido para testing
+├── deploy-fixed.sh                # Script con mejoras
 └── README.md                      # Esta documentación
 ```
 
 ## 🚀 Despliegue Rápido
 
-### Opción 1: Script Automático
+### Opción 1: Script Rápido (Solo Frontend)
 ```bash
-# Editar variables en deploy.sh
-vim container-apps/deploy.sh
+# Despliegue rápido para testing
+./container-apps/quick-deploy.sh
+```
 
-# Ejecutar despliegue
-./container-apps/deploy.sh
+### Opción 2: Script Completo
+```bash
+# Editar variables en deploy-container-apps.sh
+vim container-apps/deploy-container-apps.sh
+
+# Ejecutar despliegue completo
+./container-apps/deploy-container-apps.sh
 ```
 
 ### Opción 2: Comandos Manuales

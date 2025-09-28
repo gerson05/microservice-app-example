@@ -1,0 +1,120 @@
+{
+  "frontend-app": {
+    "image": "microservicesacr.azurecr.io/frontend:latest",
+    "targetPort": 8080,
+    "ingress": "external",
+    "cpu": 0.5,
+    "memory": "1Gi",
+    "minReplicas": 1,
+    "maxReplicas": 3,
+    "envVars": {
+      "NODE_ENV": "production",
+      "AUTH_API_ADDRESS": "https://auth-api-app.internal",
+      "TODOS_API_ADDRESS": "https://todos-api-app.internal",
+      "ZIPKIN_URL": "https://zipkin-app.internal/api/v2/spans"
+    }
+  },
+  "auth-api-app": {
+    "image": "microservicesacr.azurecr.io/auth-api:latest",
+    "targetPort": 8081,
+    "ingress": "internal",
+    "cpu": 0.25,
+    "memory": "512Mi",
+    "minReplicas": 1,
+    "maxReplicas": 3,
+    "envVars": {
+      "AUTH_API_PORT": "8081",
+      "JWT_SECRET": "myfancysecret",
+      "USERS_API_ADDRESS": "https://users-api-app.internal",
+      "ZIPKIN_URL": "https://zipkin-app.internal/api/v2/spans"
+    }
+  },
+  "todos-api-app": {
+    "image": "microservicesacr.azurecr.io/todos-api:latest",
+    "targetPort": 8082,
+    "ingress": "internal",
+    "cpu": 0.25,
+    "memory": "512Mi",
+    "minReplicas": 1,
+    "maxReplicas": 5,
+    "envVars": {
+      "TODO_API_PORT": "8082",
+      "JWT_SECRET": "myfancysecret",
+      "REDIS_HOST": "microservices-redis.redis.cache.windows.net",
+      "REDIS_PORT": "6380",
+      "REDIS_CHANNEL": "log_channel",
+      "ZIPKIN_URL": "https://zipkin-app.internal/api/v2/spans"
+    }
+  },
+  "users-api-app": {
+    "image": "microservicesacr.azurecr.io/users-api:latest",
+    "targetPort": 8083,
+    "ingress": "internal",
+    "cpu": 0.5,
+    "memory": "1Gi",
+    "minReplicas": 1,
+    "maxReplicas": 3,
+    "envVars": {
+      "SERVER_PORT": "8083",
+      "JWT_SECRET": "myfancysecret",
+      "SPRING_ZIPKIN_BASEURL": "https://zipkin-app.internal/",
+      "SPRING_PROFILES_ACTIVE": "production",
+      "SPRING_REDIS_HOST": "microservices-redis.redis.cache.windows.net",
+      "SPRING_REDIS_PORT": "6380"
+    }
+  },
+  "log-processor-app": {
+    "image": "microservicesacr.azurecr.io/log-message-processor:latest",
+    "targetPort": null,
+    "ingress": "internal",
+    "cpu": 0.1,
+    "memory": "256Mi",
+    "minReplicas": 1,
+    "maxReplicas": 2,
+    "envVars": {
+      "REDIS_HOST": "microservices-redis.redis.cache.windows.net",
+      "REDIS_PORT": "6380",
+      "REDIS_CHANNEL": "log_channel",
+      "ZIPKIN_URL": "https://zipkin-app.internal/api/v2/spans"
+    }
+  },
+  "zipkin-app": {
+    "image": "openzipkin/zipkin:latest",
+    "targetPort": 9411,
+    "ingress": "internal",
+    "cpu": 0.25,
+    "memory": "512Mi",
+    "minReplicas": 1,
+    "maxReplicas": 1,
+    "envVars": {
+      "STORAGE_TYPE": "elasticsearch",
+      "ES_HOSTS": "https://elasticsearch-app.internal:9200"
+    }
+  },
+  "elasticsearch-app": {
+    "image": "docker.elastic.co/elasticsearch/elasticsearch:7.17.0",
+    "targetPort": 9200,
+    "ingress": "internal",
+    "cpu": 1.0,
+    "memory": "2Gi",
+    "minReplicas": 1,
+    "maxReplicas": 1,
+    "envVars": {
+      "discovery.type": "single-node",
+      "ES_JAVA_OPTS": "-Xms1g -Xmx1g"
+    }
+  },
+  "monitoring-app": {
+    "image": "grafana/grafana:latest",
+    "targetPort": 3000,
+    "ingress": "external",
+    "cpu": 0.25,
+    "memory": "512Mi",
+    "minReplicas": 1,
+    "maxReplicas": 1,
+    "envVars": {
+      "GF_SECURITY_ADMIN_PASSWORD": "admin123"
+    }
+  }
+}
+
