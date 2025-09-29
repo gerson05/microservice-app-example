@@ -13,7 +13,6 @@ services:
       interval: 5s
       retries: 5
 
-
   # Zipkin for distributed tracing
   zipkin:
     image: openzipkin/zipkin:latest
@@ -32,19 +31,17 @@ services:
     environment:
       - JWT_SECRET=PRFT
       - SERVER_PORT=8083
-      - ZIPKIN_URL=http://zipkin:9411
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
     networks:
       - microservices-network
     depends_on:
-      redis:
-        condition: service_healthy
+      - redis
     healthcheck:
       test: ["CMD", "sh", "-c", "netstat -an | grep 8083 | grep LISTEN"]
       interval: 30s
       timeout: 10s
       retries: 3
 
- 
   # Auth API (Go)
   auth-api:
     build: ./auth-api
@@ -58,18 +55,9 @@ services:
     networks:
       - microservices-network
     depends_on:
-      users-api:
-        condition: service_healthy
+      - users-api
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:8000/version",
-        ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/version"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -89,10 +77,8 @@ services:
     networks:
       - microservices-network
     depends_on:
-      redis:
-        condition: service_healthy
-      auth-api:
-        condition: service_healthy
+      - redis
+      - auth-api
     healthcheck:
       test: ["CMD", "sh", "-c", "netstat -an | grep 8082 | grep LISTEN"]
       interval: 30s
@@ -111,12 +97,11 @@ services:
       - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
     depends_on:
       - redis
-      - zipkin
     restart: unless-stopped
     networks:
       - microservices-network
 
-
+  # Frontend (Vue.js + Nginx)
   frontend:
     build:
       context: ./frontend
@@ -124,20 +109,15 @@ services:
     ports:
       - "8080:80"
     environment:
-      - PORT=8080
-      - AUTH_API_PORT=8000
-      - AUTH_HOST=auth-api
-      - TODO_API_PORT=8082
-      - TODOS_API_HOST=todos-api
-      - ZIPKIN_PORT=9411/api/v2/spans
-      - ZIPKIN_HOST=zipkin
+      - AUTH_API_URL=auth-api:8000
+      - TODOS_API_URL=todos-api:8082
+      - USERS_API_URL=users-api:8083
+      - ZIPKIN_URL=zipkin:9411
     networks:
       - microservices-network
     depends_on:
-      auth-api:
-        condition: service_healthy
-      todos-api:
-        condition: service_healthy
+      - auth-api
+      - todos-api
 
 networks:
   microservices-network:

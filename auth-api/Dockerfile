@@ -23,7 +23,9 @@ WORKDIR /root/
 # Copiar el binario
 COPY --from=builder /app/auth-api .
 
-EXPOSE 8081
+EXPOSE 8080
 ENV AUTH_API_PORT=8081
+ENV USERS_API_ADDRESS=http://users-api:8083
+
 
 CMD ["./auth-api"]
