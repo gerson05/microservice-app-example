@@ -67,6 +67,23 @@ jobs:
         java-version: '8'
         cache: 'maven'
 
+    - name: Set up Python for log-message-processor
+      if: matrix.service == 'log-message-processor'
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Set up Node.js for frontend and todos-api
+      if: matrix.service == 'frontend' || matrix.service == 'todos-api'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: |
+          frontend/package-lock.json
+          todos-api/package-lock.json
+
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       if: |
@@ -83,7 +100,7 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Run tests
+    - name: Install dependencies and run tests
       if: |
         (matrix.service == 'frontend' && steps.filter.outputs.frontend == 'true') ||
         (matrix.service == 'todos-api' && steps.filter.outputs.todos_api == 'true') ||
@@ -91,23 +108,31 @@ jobs:
         (matrix.service == 'auth-api' && steps.filter.outputs.auth_api == 'true') ||
         (matrix.service == 'log-message-processor' && steps.filter.outputs.log_message_processor == 'true')
       run: |
-        echo "Running tests for ${{ matrix.service }}"
-        # Add specific test commands for each service
+        echo "Installing dependencies and running tests for ${{ matrix.service }}"
         case "${{ matrix.service }}" in
           "frontend")
-            cd frontend && npm test
+            cd frontend
+            npm install
+            npm test
             ;;
           "todos-api")
-            cd todos-api && npm test
+            cd todos-api
+            npm install
+            npm test
             ;;
           "users-api")
-            cd users-api && mvn -q -DskipITs test || true
+            cd users-api
+            mvn -q -DskipITs test || true
             ;;
           "auth-api")
-            cd auth-api && go test ./...
+            cd auth-api
+            go mod download
+            go test ./...
             ;;
           "log-message-processor")
-            cd log-message-processor && python -m pytest
+            cd log-message-processor
+            pip install -r requirements.txt
+            python -m pytest
             ;;
         esac
 
@@ -173,7 +198,24 @@ jobs:
         # Add production deployment commands here
         docker-compose -f docker-compose.yml up -d
 
-  # Job 5: Integration Tests
+  # Job 5: Deploy Preview for PRs
+  deploy-preview:
+    runs-on: ubuntu-latest
+    needs: [build-and-test, security-scan]
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Deploy Preview Environment
+      run: |
+        echo "Deploying preview environment for PR #${{ github.event.number }}"
+        # Add preview deployment commands here
+        docker-compose -f docker-compose.yml up -d
+        echo "Preview environment deployed at: https://preview-${{ github.event.number }}.your-domain.com"
+
+  # Job 6: Integration Tests
   integration-tests:
     runs-on: ubuntu-latest
     needs: deploy-staging
