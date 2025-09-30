@@ -185,8 +185,21 @@ jobs:
     - name: Deploy to Staging
       run: |
         echo "Deploying to staging environment"
-        # Add deployment commands here
-        docker-compose -f docker-compose.yml up -d
+        # Install docker-compose if not available
+        if ! command -v docker-compose &> /dev/null; then
+          echo "Installing docker-compose..."
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+        fi
+        
+        # Try docker-compose first, fallback to docker compose
+        if command -v docker-compose &> /dev/null; then
+          echo "Using docker-compose command"
+          docker-compose -f docker-compose.yml up -d
+        else
+          echo "Using docker compose command"
+          docker compose -f docker-compose.yml up -d
+        fi
 
   # Job 4: Deploy to Production
   deploy-production:
@@ -202,8 +215,21 @@ jobs:
     - name: Deploy to Production
       run: |
         echo "Deploying to production environment"
-        # Add production deployment commands here
-        docker-compose -f docker-compose.yml up -d
+        # Install docker-compose if not available
+        if ! command -v docker-compose &> /dev/null; then
+          echo "Installing docker-compose..."
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+        fi
+        
+        # Try docker-compose first, fallback to docker compose
+        if command -v docker-compose &> /dev/null; then
+          echo "Using docker-compose command"
+          docker-compose -f docker-compose.yml up -d
+        else
+          echo "Using docker compose command"
+          docker compose -f docker-compose.yml up -d
+        fi
 
   # Job 5: Deploy Preview for PRs
   deploy-preview:
@@ -215,11 +241,28 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
     - name: Deploy Preview Environment
       run: |
         echo "Deploying preview environment for PR #${{ github.event.number }}"
-        # Add preview deployment commands here
-        docker-compose -f docker-compose.yml up -d
+        # Install docker-compose if not available
+        if ! command -v docker-compose &> /dev/null; then
+          echo "Installing docker-compose..."
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+        fi
+        
+        # Try docker-compose first, fallback to docker compose
+        if command -v docker-compose &> /dev/null; then
+          echo "Using docker-compose command"
+          docker-compose -f docker-compose.yml up -d
+        else
+          echo "Using docker compose command"
+          docker compose -f docker-compose.yml up -d
+        fi
+        
         echo "Preview environment deployed at: https://preview-${{ github.event.number }}.your-domain.com"
 
   # Job 6: Integration Tests
@@ -235,8 +278,22 @@ jobs:
     - name: Run Integration Tests
       run: |
         echo "Running integration tests"
-        # Add integration test commands here
-        docker-compose -f docker-compose.yml up -d
+        # Install docker-compose if not available
+        if ! command -v docker-compose &> /dev/null; then
+          echo "Installing docker-compose..."
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+        fi
+        
+        # Try docker-compose first, fallback to docker compose
+        if command -v docker-compose &> /dev/null; then
+          echo "Using docker-compose command"
+          docker-compose -f docker-compose.yml up -d
+        else
+          echo "Using docker compose command"
+          docker compose -f docker-compose.yml up -d
+        fi
+        
         sleep 30
         # Run tests against running services
         curl -f http://localhost:8082/version || exit 1

@@ -16,7 +16,21 @@ jobs:
 
     - name: Start services
       run: |
-        docker-compose -f docker-compose-simple.yml up -d
+        # Install docker-compose if not available
+        if ! command -v docker-compose &> /dev/null; then
+          echo "Installing docker-compose..."
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+        fi
+        
+        # Try docker-compose first, fallback to docker compose
+        if command -v docker-compose &> /dev/null; then
+          echo "Using docker-compose command"
+          docker-compose -f docker-compose-simple.yml up -d
+        else
+          echo "Using docker compose command"
+          docker compose -f docker-compose-simple.yml up -d
+        fi
         sleep 30
 
     - name: Health Check - TODOs API
