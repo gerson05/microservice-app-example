@@ -84,6 +84,12 @@ jobs:
           frontend/package-lock.json
           todos-api/package-lock.json
 
+    - name: Set up Python 2 for node-sass (frontend only)
+      if: matrix.service == 'frontend'
+      uses: actions/setup-python@v4
+      with:
+        python-version: '2.7'
+
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       if: |
@@ -112,6 +118,7 @@ jobs:
         case "${{ matrix.service }}" in
           "frontend")
             cd frontend
+            npm config set python /usr/bin/python2.7
             npm install
             npm test
             ;;

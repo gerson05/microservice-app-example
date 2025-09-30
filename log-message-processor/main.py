@@ -24,11 +24,15 @@ if __name__ == '__main__':
             headers={'Content-Type': 'application/x-thrift'},
         )
 
-    pubsub = redis.Redis(host=redis_host, port=redis_port, db=0).pubsub()
-    pubsub.subscribe([redis_channel])
+    r = redis.Redis(host=redis_host, port=redis_port, db=0, decode_responses=True)
+    pubsub = r.pubsub()
+    pubsub.subscribe(redis_channel)
     for item in pubsub.listen():
         try:
-            message = json.loads(str(item['data'].decode("utf-8")))
+            if item['type'] == 'message':
+                message = json.loads(item['data'])
+            else:
+                continue
         except Exception as e:
             log_message(e)
             continue
