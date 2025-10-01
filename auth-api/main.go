@@ -5,12 +5,15 @@ import (
 	"log"
 	"net/http"
 	"os"
+
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	gommonlog "github.com/labstack/gommon/log"
+	"github.com/sony/gobreaker"
+	"errors"
 )
 
 var (
@@ -40,6 +43,16 @@ func main() {
 			"johnd_foo":   nil,
 			"janed_ddd":   nil,
 		},
+		cb: gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:        "UserServiceCB",
+			MaxRequests: 5,
+			Interval:    60 * time.Second,
+			Timeout:     30 * time.Second,
+			ReadyToTrip: func(counts gobreaker.Counts) bool {
+				failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
+				return counts.Requests >= 5 && failureRatio >= 0.6
+			},
+		}),
 	}
 
 	e := echo.New()
@@ -90,11 +103,15 @@ func getLoginHandler(userService UserService) echo.HandlerFunc {
 		ctx := c.Request().Context()
 		user, err := userService.Login(ctx, requestData.Username, requestData.Password)
 		if err != nil {
+			// Manejo explícito del breaker abierto
+			if errors.Is(err, gobreaker.ErrOpenState) {
+				log.Printf("Circuit breaker OPEN: servicio de usuarios no disponible")
+				return echo.NewHTTPError(http.StatusServiceUnavailable, "Servicio de usuarios no disponible temporalmente")
+			}
 			if err != ErrWrongCredentials {
 				log.Printf("could not authorize user '%s': %s", requestData.Username, err.Error())
 				return ErrHttpGenericMessage
 			}
-
 			return ErrWrongCredentials
 		}
 		token := jwt.New(jwt.SigningMethodHS256)

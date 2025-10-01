@@ -1,0 +1,65 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # TODOs API
+  - job_name: 'todos-api'
+    static_configs:
+      - targets: ['todos-api:8082']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # Users API
+  - job_name: 'users-api'
+    static_configs:
+      - targets: ['users-api:8083']
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 5s
+
+  # Auth API
+  - job_name: 'auth-api'
+    static_configs:
+      - targets: ['auth-api:8081']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # Frontend
+  - job_name: 'frontend'
+    static_configs:
+      - targets: ['frontend:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    scrape_interval: 5s
+
+  # Zipkin
+  - job_name: 'zipkin'
+    static_configs:
+      - targets: ['zipkin:9411']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # Node Exporter (if available)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 5s
